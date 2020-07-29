@@ -1,0 +1,4 @@
+-r requirements.txt
+isort==4.3.21
+black==19.10b0
+ipdb==0.13.2
