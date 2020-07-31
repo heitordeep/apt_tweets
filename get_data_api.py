@@ -1,55 +1,90 @@
 import json
-from datetime import datetime
+from datetime import datetime as dt
+from datetime import timedelta
+from re import IGNORECASE, compile
 
-import tweepy
-from azure.storage.blob import BlobClient
+from azure.storage.blob import BlobServiceClient
 from decouple import config
+from tweepy import API, Cursor, OAuthHandler
+from tweepy.error import TweepError
+
 
 class TweetFinder:
-    def __init__(self, minute):
-        self.auth = tweepy.OAuthHandler(
+    def __init__(self):
+        self.auth = OAuthHandler(
             config('consumer_key'), config('consumer_secret')
         )
         self.auth.set_access_token(
             config('access_token'), config('access_secret')
         )
-        self.api = tweepy.API(self.auth)
-        self.now = datetime.now()
-        self.date_now = f'{self.now.year}{self.now.month}{self.now.day}{self.now.hour}{minute}{self.now.second}'
-        self.date_now_folder = f'{self.now.year}{self.now.month}{self.now.day}{self.now.hour}{minute}'
-        self.blob = BlobClient(
-            account_url=config('account_url'),
-            container_name=config('container'),
-            blob_name=f'RawData_{self.date_now_folder}/tweets_{self.date_now}.json',
-            credential=config('credential'),
+        self.api = API(self.auth)
+        self.blob = BlobServiceClient.from_connection_string(
+            config('connect_string')
         )
+        self.container_client = self.blob.get_container_client(config('container'))
+        self.partitions = {}
 
-    def get_data(self, find_tweet):
-        items = []
-        
-        for tweet in tweepy.Cursor(
-            self.api.search,
-            q=find_tweet,
-            until=datetime.today().strftime('%Y-%m-%d'),
-        ).items():
-            if find_tweet in tweet.text:
-                items.append({'Date': str(tweet.created_at), 'Text': tweet.text})
+    def get_data(self, find_tweet, retroactive):
+        rgx_tweet = compile(f'.*({find_tweet}).*', IGNORECASE)
 
-        return items        
+        if retroactive:
+            tweets = Cursor(self.api.search, q=find_tweet).items()
+        else:
+            yesterday = (dt.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+            tweets = Cursor(
+                self.api.search, q=find_tweet, since=yesterday
+            ).items()
 
-    def input_blob(self, tweets):
+        try:
+            for tweet in tweets:
+                if rgx_tweet.match(tweet.text):
+                    self._store_tweet(tweet)
+        except TweepError as e:
+            print(e)
 
-        self.blob.upload_blob(json.dumps(tweets, ensure_ascii=False))
+    def _store_tweet(self, tweet):
+        tweet_date = tweet.created_at
+        # minute = lambda minute: '00' if minute <= 29 else '30'
+        # date = tweet_date.strftime(f"%Y%m%d%H{minute(tweet_date.minute)}")
+        date = tweet_date.strftime("%Y%m%d")
+        payload = {
+            'id': tweet.id,
+            'created_at': tweet_date.strftime(f"%Y-%m-%d %H:%M"),
+            'text': tweet.text,
+        }
 
-        print('Upload Success...')
+        if date not in self.partitions:
+            self.partitions[date] = [payload]
+        else:
+            self.partitions[date].append(payload)
 
+    def check_blob(self):
 
-# -----------------------------------
+            file_list = self.container_client.list_blobs(
+                name_starts_with='RawData/'
+            )
+            
+            path_blob = {
+                f'RawData/tweets_{key}.json' for key in self.partitions.keys()
+            } 
 
-minute = '30'
-if datetime.now().minute <= 29:
-   minute = '00'
+            for blob in file_list:
+                if blob.name not in path_blob:  
+                    import ipdb; ipdb.set_trace()
+                    
+                    for partition, tweets in self.partitions.items(): 
 
-get_tweets = TweetFinder(minute=minute)
-tweets = get_tweets.get_data(find_tweet='Caieiras')
-get_tweets.input_blob(tweets)
+                        self.connect_container = self.blob.get_blob_client(
+                            container=config('container'),
+                            blob=f'RawData/tweets_{partition}.json'
+                        )
+                        self.connect_container.upload_blob(
+                            json.dumps(tweets, ensure_ascii=False)
+                        )
+            
+if __name__ == '__main__':
+    text = 'Caieiras'
+    retroactive = True
+    get_tweets = TweetFinder()
+    get_tweets.get_data(find_tweet=text, retroactive=retroactive)
+    get_tweets.check_blob()
