@@ -1,97 +1,102 @@
 import json
-from datetime import datetime
+from datetime import datetime as dt, timedelta
+from re import IGNORECASE, compile
 
-import tweepy
-from azure.storage.blob import BlobClient, BlobServiceClient
+from azure.storage.blob import BlobClient, BlobServiceClient, BlobType
 from decouple import config
+from tweepy import API, Cursor, OAuthHandler
+from tweepy.error import TweepError
 
 
 class TweetFinder:
-    def __init__(self, minute):
-        self.auth = tweepy.OAuthHandler(
+    def __init__(self):
+        self.auth = OAuthHandler(
             config('consumer_key'), config('consumer_secret')
         )
         self.auth.set_access_token(
             config('access_token'), config('access_secret')
         )
-        self.api = tweepy.API(self.auth)
-        self.now = datetime.now()
-        self.date_now = f'{self.now.year}{self.now.month}{self.now.day}{self.now.hour}{minute}'
+        self.api = API(self.auth)
         self.blob = BlobServiceClient.from_connection_string(
             config('connect_string')
         )
-        self.partition = []
+        self.partitions = {}
 
-    def get_data(self, find_tweet):
-        items = []
+    def get_data(self, find_tweet, retroactive):
+        rgx_tweet = compile(f'({find_tweet})', IGNORECASE)
 
-        minute = lambda minute: '00' if minute <= '29' else '30'
-        for tweet in tweepy.Cursor(
-            self.api.search,
-            q=find_tweet,
-            until=datetime.today().strftime('%Y-%m-%d'),
-        ).items():
-            if find_tweet in tweet.text:
-                data = tweet.created_at
-                now = f'{data.year}{str(data.month).zfill(2)}{str(data.day).zfill(2)}{str(data.hour).zfill(2)}{minute(str(data.minute))}'
-                items.append({'created_at': now, 'text': tweet.text})
-                if now not in self.partition:
-                    self.partition.append(now)
+        if retroactive:
+            tweets = Cursor(self.api.search, q=find_tweet).items()
+        else:
+            yesterday = (dt.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+            tweets = Cursor(
+                self.api.search, q=find_tweet, since=yesterday
+            ).items()
 
-        return items
+        counter = 0
+        try:
+            for tweet in tweets:
+                counter += 1
+                if rgx_tweet.match(tweet.text):
+                    self._store_tweet(tweet)
+        except TweepError as e:
+            print(e)
 
-    def blob_input(self, tweets, date, verification):
-        for tweet in tweets:
-            self.connect_container = self.blob.get_blob_client(
-                    container=config('container'),
-                    blob=f'RawData/tweets_{tweet["created_at"]}.json'
-                    # blob=f'RawData/{tweet["created_at"]}/tweets_{tweet["created_at"]}.json',
-            )
-            
-            if verification:                    
-                try:       
-                    self.connect_container.upload_blob(
-                        json.dumps(tweet, ensure_ascii=False, overwrite=True)
-                    )
-                except:
-                    pass
-            else:
-
-                try:
-                    self.connect_container.upload_blob(
-                        json.dumps(tweet, ensure_ascii=False)
-                    )
-                except:
-                    pass
+    def _store_tweet(self, tweet):
+        tweet_date = tweet.created_at
+        minute = lambda minute: '00' if minute <= 29 else '30'
+        #date = f'{tweet_date.strftime("%Y%m%d%H")}{minute(tweet_date.minute)}'
+        date = tweet_date.strftime("%Y%m%d")
         
+        payload = {
+            'id': tweet.id,
+            'created_at': tweet_date.strftime("%Y-%m-%d %H:%M"),
+            'text': tweet.text,
+        }
 
+        if date not in self.partitions:
+            self.partitions[date] = [payload]
+        else:
+            self.partitions[date].append(payload)
 
-    def check_blob(self, tweets):
+    def check_blob(self):
         verification = False
 
         try:
-            container_client = self.blob.get_container_client(config('container'))
-            container_list = container_client.list_blobs()
+            container_client = self.blob.get_container_client(
+                config('container')
+            )
             file_list = container_client.list_blobs()
-            
-            path_blob = [f'RawData/{date}/tweets_{date}' for date in self.partition]
 
-            for blob in file_list:                
-                if blob.name in path_blob:
-                    verification = True
-                self.blob_input(tweets, self.partition, verification)
+            for partition, tweets in self.partitions.items():
+                self.connect_container = self.blob.get_blob_client(
+                    container=config('container'),
+                    blob=f'RawData/tweets_{partition}.json',
+                )
+                self.connect_container.upload_blob(
+                    json.dumps(tweets, ensure_ascii=False), 
+                )
+            # path_blob = [
+            #     f'RawData/{date}/tweets_{date}' for date in self.partition
+            # ]
 
-        except StopIteration:
-            pass
-        finally:
-            self.blob_input(tweets, self.partition, verification)
-            
+            # for blob in file_list:
+            #     if blob.name in path_blob:
+            #         verification = True
+            #     self.blob_input(self.partition, verification)
+
+        except StopIteration as e:
+            import ipdb; ipdb.set_trace()
+            pizza = e
+        except Exception as e:
+            import ipdb; ipdb.set_trace()
+            pizza = e
 
 
-minute = '30'
-if datetime.now().minute <= 29:
-    minute = '00'
-
-get_tweets = TweetFinder(minute=minute)
-tweets = get_tweets.get_data(find_tweet='Caieiras')
-get_tweets.check_blob(tweets)
+if __name__ == '__main__':
+    # receber por args do prompt
+    text = 'Caieiras'
+    retroactive = True
+    get_tweets = TweetFinder()
+    get_tweets.get_data(find_tweet=text, retroactive=retroactive)
+    get_tweets.check_blob()
