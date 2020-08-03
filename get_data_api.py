@@ -33,11 +33,8 @@ class TweetFinder:
         if retroactive:
             tweets = Cursor(self.api.search, q=find_tweet).items()
         else:
-            yesterday = (dt.now() - timedelta(days=1)).strftime('%Y-%m-%d')
-            # dt.today().strftime(f"%Y-%m-%d")
-            tweets = Cursor(
-                self.api.search, q=find_tweet, since=yesterday
-            ).items()
+            today = dt.today().strftime(f"%Y-%m-%d")
+            tweets = Cursor(self.api.search, q=find_tweet, since=today).items()
 
         try:
             for tweet in tweets:
@@ -48,9 +45,9 @@ class TweetFinder:
 
     def _store_tweet(self, tweet):
         tweet_date = tweet.created_at
-        # minute = lambda minute: '00' if minute <= 29 else '30'
-        # date = tweet_date.strftime(f"%Y%m%d%H{minute(tweet_date.minute)}")
-        date = tweet_date.strftime("%Y%m%d")
+        minute = lambda minute: '00' if minute <= 29 else '30'
+        date = tweet_date.strftime(f"%Y%m%d%H{minute(tweet_date.minute)}")
+
         payload = {
             'id': tweet.id,
             'created_at': tweet_date.strftime(f"%Y-%m-%d %H:%M"),
@@ -76,7 +73,7 @@ class TweetFinder:
     def check_blob(self):
 
         try:
-            
+
             # Get file path
             path_blob = [
                 f'RawData/tweets_{key}.json' for key in self.partitions
@@ -87,7 +84,7 @@ class TweetFinder:
             # Get blob list
             blobs = [x for x in file_list.by_page().next()]
 
-            # Checks the blob is empty 
+            # Checks the blob is empty
             if len(blobs) != 0:
                 for blob in file_list:
                     if path_blob not in list(blob.name):
@@ -96,13 +93,14 @@ class TweetFinder:
                 self.insert_in_blob()
 
         except ResourceExistsError as e:
-            # TODO: 
+            # TODO: Fix bug the Azure.
+            # Returns error when checking files.
             print(f'Erro: {e}')
 
 
 if __name__ == '__main__':
     text = 'Caieiras'
-    retroactive = True
+    retroactive = False
     get_tweets = TweetFinder()
     get_tweets.get_data(find_tweet=text, retroactive=retroactive)
     get_tweets.check_blob()
