@@ -64,7 +64,10 @@ class TweetFinder:
         for partition, tweets in self.partitions.items():
             self.connect_container = self.blob.get_blob_client(
                 container=config('container'),
-                blob=f'RawData/tweets_{partition}.json',
+                blob=(
+                    f'RawData/{self.now.strftime(f"%Y%m%d")}
+                    f'/tweets_{self.now.strftime(f"%Y%m%d%H%M")}.json'
+                ),
             )
             self.connect_container.upload_blob(
                 json.dumps(tweets, ensure_ascii=False), overwrite=True
@@ -87,7 +90,7 @@ class TweetFinder:
             # Checks the blob is empty
             if len(blobs) != 0:
                 for blob in file_list:
-                    if path_blob not in list(blob.name):
+                    if blob.name not in path_blob:
                         self.insert_in_blob()
             else:
                 self.insert_in_blob()
