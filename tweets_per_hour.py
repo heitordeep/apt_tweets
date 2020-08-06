@@ -37,8 +37,7 @@ class TweetFinder:
         try:
             for tweet in tweets:
                 if rgx_tweet.match(tweet.text):
-                    self.payload.append(
-                        {
+                    self.payload.append({
                             'created_at': str(
                                 tweet.created_at.strftime('%Y-%m-%d %H:%M:%S')
                             ),
@@ -59,25 +58,19 @@ class TweetFinder:
             ) and tweet['created_at'] <= str(verification_date['final']):
                 self.tweets.append(tweet)
 
-        if len(self.tweets) == 0:
-            self.tweets.append(
-                {
-                    'created_at': self.now.strftime('%Y-%m-%d %H:%M:%S'),
-                    'text': '',
-                }
-            )
+        self.upload_file(verification_date['start'])
 
-        self.upload_file()
+    def upload_file(self, dt_partition):
 
-    def upload_file(self):
+        partition = (dt_partition + timedelta(hours=1)) - timedelta(minutes=30)
 
         self.connect_container = self.blob.get_blob_client(
             container=config('container'),
             blob=(
-                f'RawData/{self.now.strftime(f"%Y%m%d")}'
-                f'/{self.now.strftime(f"%H%M")}'
-                f'/{self.now.strftime(f"%M")}'
-                f'/tweets_{self.now.strftime(f"%Y%m%d%H%M")}.json'
+                f'RawData/{partition.strftime(f"%Y%m%d")}'
+                f'/{partition.strftime(f"%H")}'
+                f'/{partition.strftime(f"%M")}'
+                f'/tweets_{partition.strftime(f"%Y%m%d%H%M")}.json'
             ),
         )
         self.connect_container.upload_blob(

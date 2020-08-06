@@ -25,6 +25,7 @@ class TweetFinder:
         self.container_client = self.blob.get_container_client(
             config('container')
         )
+        self.now = dt.now()
         self.partitions = {}
 
     def get_data(self, find_tweet, retroactive):
@@ -65,7 +66,7 @@ class TweetFinder:
             self.connect_container = self.blob.get_blob_client(
                 container=config('container'),
                 blob=(
-                    f'RawData/{self.now.strftime(f"%Y%m%d")}
+                    f'RawData/{self.now.strftime(f"%Y%m%d")}'
                     f'/tweets_{self.now.strftime(f"%Y%m%d%H%M")}.json'
                 ),
             )
