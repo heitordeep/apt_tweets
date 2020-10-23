@@ -14,7 +14,7 @@ style-check:  ## Check isort and black code style
 
 
 requirements: ## Install project packages
-	@pip install -r requirements_dev.txt 
+	@pip install -r requirements_dev.txt
 
 clean:  ## Clean python bytecodes, optimized files, cache, coverage...
 	@find . -name "*.pyc" | xargs rm -rf
@@ -23,5 +23,8 @@ clean:  ## Clean python bytecodes, optimized files, cache, coverage...
 	@find . -name ".cache" -type d | xargs rm -rf
 	@echo 'Temporary files deleted'
 
-run: clean ## Run script
+run_hour: clean ## Run script per hour
 	python tweets_per_hour.py
+
+run_day: clean ## Run script per day
+		python tweets_per_day.py

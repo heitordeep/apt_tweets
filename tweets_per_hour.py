@@ -12,17 +12,17 @@ from tweepy.error import TweepError
 class TweetFinder:
     def __init__(self):
         self.auth = OAuthHandler(
-            config('consumer_key'), config('consumer_secret')
+            config('consumer_key'), config('consumer_secret') # Tweeter
         )
         self.auth.set_access_token(
-            config('access_token'), config('access_secret')
+            config('access_token'), config('access_secret') # Tweeter
         )
-        self.api = API(self.auth)
+        self.api = API(self.auth) # Tweeter
         self.blob = BlobServiceClient.from_connection_string(
-            config('connect_string')
+            config('connect_string') # Azure
         )
         self.container_client = self.blob.get_container_client(
-            config('container')
+            config('container') # Azure
         )
         self.now = dt.now()
         self.payload = []
@@ -36,6 +36,7 @@ class TweetFinder:
 
         try:
             for tweet in tweets:
+                # Finds the word passed by the "find_tweet" parameter.
                 if rgx_tweet.match(tweet.text):
                     self.payload.append({
                             'created_at': str(
@@ -67,6 +68,7 @@ class TweetFinder:
         self.connect_container = self.blob.get_blob_client(
             container=config('container'),
             blob=(
+                # Partition by year, month, day, hour and minute.
                 f'RawData/{partition.strftime(f"%Y%m%d")}'
                 f'/{partition.strftime(f"%H")}'
                 f'/{partition.strftime(f"%M")}'
@@ -77,6 +79,7 @@ class TweetFinder:
             json.dumps(self.tweets, ensure_ascii=False)
         )
 
+    # Get 30 minutes ago.
     def verification_date(self):
 
         if self.now.minute <= 29:
